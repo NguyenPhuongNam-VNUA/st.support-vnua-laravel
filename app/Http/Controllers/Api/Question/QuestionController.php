@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use App\Models\Question;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class QuestionController extends Controller
 {
@@ -182,4 +183,99 @@ class QuestionController extends Controller
         }
     }
 
+
+    public function add_excel(Request $request): JsonResponse
+    {
+        try {
+            $data = $request->input('newQuestions', []);
+            $saved_questions = [];
+            // Create question
+            foreach ($data as $item) {
+                $question = Question::create([
+                    'question' => $item['question'],
+                    'answer' => $item['answer'] ?? null,
+                    'has_answer' => (bool)($item['answer'] ?? false),
+                ]);
+
+                $saved_questions[] = $question;
+            }
+            //Log::info($saved_questions);
+            $payload = collect($saved_questions)->map(function ($item) {
+                return [
+                    'id' => $item->id,
+                    'question' => $item->question,
+                    'answer' => $item->answer,
+                    'has_answer' => (bool)$item->answer,
+                ];
+            })->toArray();
+//            Log::info($payload);
+            // Embedding data
+            Http::post('http://127.0.0.1:5000/api/embed-batch', [
+                'questions' => $payload
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Lỗi khi thêm câu hỏi từ Excel',
+                'error' => $e->getMessage(),
+                'status' => 'error'
+            ], 500);
+        }
+    }
+
+    public function update_duplicates(Request $request): JsonResponse
+    {
+        try {
+            $data = $request->input('duplicateQuestions', []);
+
+            if (empty($data)) {
+                return response()->json([
+                    'message' => 'Danh sách dữ liệu trống',
+                    'status' => 'error'
+                ], 400);
+            }
+
+            $updatedQuestions = [];
+
+            foreach ($data as $item) {
+                $question = Question::find($item['id']);
+
+                if (!$question) {
+                    continue; // Bỏ qua nếu không tìm thấy
+                }
+
+                // Cập nhật nội dung câu hỏi
+                $question->question = $item['question'];
+                $question->answer = $item['answer'] ?? null;
+                $question->has_answer = (bool)($item['answer'] ?? false);
+                $question->save();
+
+                $updatedQuestions[] = $question;
+
+                // Gửi sang Python để cập nhật lại embedding
+                Http::post('http://127.0.0.1:5000/api/embed', [
+                    'id' => $question->id,
+                    'question' => $question->question,
+                    'answer' => $question->answer,
+                    'has_answer' => $question->has_answer
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Đã cập nhật và embedding lại các câu hỏi thành công',
+                'updated' => $updatedQuestions,
+                'status' => 'success'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Lỗi khi cập nhật câu hỏi trùng lặp',
+                'error' => $e->getMessage(),
+                'status' => 'error'
+            ], 500);
+        }
+    }
 }
