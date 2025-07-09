@@ -65,7 +65,7 @@ class QuestionController extends Controller
 
             if (Question::all()->count() >= 1) {
                 //Check duplicate question
-                $check_data = Http::post('http://127.0.0.1:5000/api/check-duplicate', [
+                $check_data = Http::post(config('services.python_api.base_url') .'/check-duplicate', [
                     'question' => $request->question,
                 ]);
 
@@ -83,7 +83,7 @@ class QuestionController extends Controller
             $question = Question::create($request->all());
 
             // Embedding data
-            $embed_data = Http::post('http://127.0.0.1:5000/api/embed', [
+            $embed_data = Http::post(config('services.python_api.base_url') .'/embed', [
                 'id' => $question->id,
                 'question' => $question->question,
                 'answer' => $question->answer,
@@ -116,7 +116,7 @@ class QuestionController extends Controller
             $question = Question::findOrFail($id);
             $question->update($request->all());
 
-            Http::post('http://127.0.0.1:5000/api/embed', [
+            Http::post(config('services.python_api.base_url') . '/embed', [
                 'id' => $question->id,
                 'question' => $question->question,
                 'answer' => $question->answer,
@@ -141,7 +141,7 @@ class QuestionController extends Controller
             $question = Question::findOrFail($id);
             $question->delete();
 
-            Http::post('http://127.0.0.1:5000/api/delete-embed', [
+            Http::post(config('services.python_api.base_url') . '/delete-embed', [
                 'id' => $id
             ]);
 
@@ -170,7 +170,7 @@ class QuestionController extends Controller
             Question::whereIn('id', $ids)->delete();
 
             // Gọi sang Python
-            Http::post('http://127.0.0.1:5000/api/delete-embed-many', [
+            Http::post(config('services.python_api.base_url') . '/delete-embed-many', [
                 'ids' => $ids
             ]);
 
@@ -210,7 +210,7 @@ class QuestionController extends Controller
             })->toArray();
 //            Log::info($payload);
             // Embedding data
-            Http::post('http://127.0.0.1:5000/api/embed-batch', [
+            Http::post(config('services.python_api.base_url') . '/embed-batch', [
                 'questions' => $payload
             ]);
 
@@ -256,7 +256,7 @@ class QuestionController extends Controller
                 $updatedQuestions[] = $question;
 
                 // Gửi sang Python để cập nhật lại embedding
-                Http::post('http://127.0.0.1:5000/api/embed', [
+                Http::post(config('services.python_api.base_url') . '/embed', [
                     'id' => $question->id,
                     'question' => $question->question,
                     'answer' => $question->answer,
