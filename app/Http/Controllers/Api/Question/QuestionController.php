@@ -16,7 +16,7 @@ class QuestionController extends Controller
         try {
             $questions = Question::all();
 
-            if (!$questions) {
+            if ($questions->isEmpty()) {
                 return response()->json([
                     'message' => 'Không có câu hỏi nào',
                     'status' => 'error'
