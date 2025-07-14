@@ -58,8 +58,8 @@ class QuestionController extends Controller
     {
         try {
             $request->validate([
-                'question' => 'required|string|max:255',
-                'answer' => 'nullable|string|max:500',
+                'question' => 'required|string',
+                'answer' => 'nullable|string',
                 'has_answer' => 'required|boolean'
             ]);
 
@@ -108,8 +108,8 @@ class QuestionController extends Controller
     {
         try {
             $request->validate([
-                'question' => 'required|string|max:255',
-                'answer' => 'nullable|string|max:500',
+                'question' => 'required|string',
+                'answer' => 'nullable|string',
                 'has_answer' => 'required|boolean'
             ]);
 
@@ -273,6 +273,58 @@ class QuestionController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Lỗi khi cập nhật câu hỏi trùng lặp',
+                'error' => $e->getMessage(),
+                'status' => 'error'
+            ], 500);
+        }
+    }
+
+    public function storePublic(Request $request): JsonResponse
+    {
+        // Kiểm tra khóa bảo mật
+        if ($request->header('x-api-secret') !== env('PUBLIC_QUESTION_SECRET')) {
+            return response()->json(['message' => 'Không có quyền truy cập'], 403);
+        }
+
+        $request->validate([
+            'question' => 'required|string|min:10',
+            'answer' => 'nullable|string',
+            'has_answer' => 'required|boolean'
+        ]);
+
+        try {
+            $check_data = Http::post(config('services.python_api.base_url') .'/check-duplicate', [
+                'question' => $request->question,
+            ]);
+
+            if ($check_data->json('is_duplicate') === true) {
+                return response()->json([
+                    'message' => 'Câu hỏi đã tồn tại',
+                    'question' => $check_data->json('existing_doc'),
+                    'score' => $check_data->json('score_str'),
+                    'status' => 'error'
+                ], 409);
+            }
+
+            // Create question
+            $question = Question::create($request->all());
+
+            // Embedding data
+            $embed_data = Http::post(config('services.python_api.base_url') .'/embed', [
+                'id' => $question->id,
+                'question' => $question->question,
+                'answer' => $question->answer,
+                'has_answer' => (bool)$question->answer,
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $question,
+                'embed_data' => $embed_data->json()
+            ], 201);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Lỗi khi tạo câu hỏi phát sinh',
                 'error' => $e->getMessage(),
                 'status' => 'error'
             ], 500);
