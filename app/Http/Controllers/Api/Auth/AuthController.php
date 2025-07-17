@@ -21,7 +21,7 @@ class AuthController extends Controller
         }
 
         $user = $request->user();
-        $token = $user->createToken('auth_token', [], now()->addHours(2))->plainTextToken;
+        $token = $user->createToken('auth_token', [], now()->addDays(2))->plainTextToken;
 
         return response()->json([
             'message' => 'Đăng nhập thành công',

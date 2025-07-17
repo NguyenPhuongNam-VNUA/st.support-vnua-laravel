@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Question\QuestionController;
 use App\Http\Controllers\Api\Document\DocumentController;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Storage;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -24,11 +26,24 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::prefix('documents')->group(function () {
         Route::get('/', [DocumentController::class, 'index']);
-//    Route::get('/{id}', [DocumentController::class, 'show']);
         Route::post('/', [DocumentController::class, 'store']);
-//    Route::patch('/{id}', [DocumentController::class, 'update']);
-//    Route::delete('/{id}', [DocumentController::class, 'destroy']);
+        Route::delete('/{id}', [DocumentController::class, 'destroy']);
+        Route::post('/update-status', [DocumentController::class, 'update_status']);
     });
 });
 
 Route::post('/public/questions', [QuestionController::class, 'storePublic']);
+Route::get('/pdf-view', function (\Illuminate\Http\Request $request) {
+    $path = $request->query('path'); // ví dụ: "documents/abc.pdf"
+
+    if (!$path || !Storage::disk('public')->exists($path)) {
+        return response()->json(['message' => 'File not found'], 404);
+    }
+
+    $file = Storage::disk('public')->get($path);
+
+    return response($file, 200)
+        ->header('Content-Type', 'application/pdf')
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Content-Disposition', 'inline; filename="preview.pdf"');
+});
