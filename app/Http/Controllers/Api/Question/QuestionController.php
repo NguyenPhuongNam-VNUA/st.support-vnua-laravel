@@ -59,14 +59,17 @@ class QuestionController extends Controller
         try {
             $request->validate([
                 'question' => 'required|string',
-                'answer' => 'nullable|string',
-                'has_answer' => 'required|boolean'
+                'answer' => 'required|string',
+                'has_answer' => 'required|boolean',
+                'topic' => 'required|string',
+                'related_questions' => 'nullable|string',
             ]);
 
             if (Question::all()->count() >= 1) {
                 //Check duplicate question
                 $check_data = Http::post(config('services.python_api.base_url') .'/check-duplicate', [
                     'question' => $request->question,
+                    'related_questions' => $request->related_questions ?? '',
                 ]);
 
                 if ($check_data->json('is_duplicate') === true) {
@@ -78,7 +81,6 @@ class QuestionController extends Controller
                     ], 409);
                 }
             }
-
             // Create question
             $question = Question::create($request->all());
 
@@ -88,7 +90,12 @@ class QuestionController extends Controller
                 'question' => $question->question,
                 'answer' => $question->answer,
                 'has_answer' => (bool)$question->answer,
+                'topic' => $question->topic,
+                'related_questions' => $question->related_questions,
             ]);
+
+            $question->is_embed = $embed_data->json('is_embed');
+            $question->save();
 
             return response()->json([
                 'status' => 'success',
@@ -110,21 +117,30 @@ class QuestionController extends Controller
             $request->validate([
                 'question' => 'required|string',
                 'answer' => 'nullable|string',
-                'has_answer' => 'required|boolean'
+                'has_answer' => 'required|boolean',
+                'topic' => 'required|string',
+                'related_questions' => 'nullable|string',
             ]);
 
             $question = Question::findOrFail($id);
             $question->update($request->all());
 
-            Http::post(config('services.python_api.base_url') . '/embed', [
+            $embed_data = Http::post(config('services.python_api.base_url') . '/embed', [
                 'id' => $question->id,
                 'question' => $question->question,
                 'answer' => $question->answer,
+                'has_answer' => (bool)$question->answer,
+                'topic' => $question->topic,
+                'related_questions' => $question->related_questions,
             ]);
+            
+            $question->is_embed = $embed_data->json('is_embed');
+            $question->save();
 
             return response()->json([
                 'status' => 'success',
-                'data' => $question
+                'data' => $question,
+                'embed_data' => $embed_data->json(),
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -183,6 +199,43 @@ class QuestionController extends Controller
         }
     }
 
+    public function embedMany(Request $request): JsonResponse
+    {
+        $questions = $request->input('questions', []);
+
+        try {
+            $payload = collect($questions)->map(function ($item) {
+                return [
+                    'id' => $item['id'],
+                    'question' => $item['question'],
+                    'answer' => $item['answer'] ?? null,
+                    'has_answer' => (bool)($item['has_answer'] ?? false),
+                    'topic' => $item['topic'] ?? 'Chưa phân loại',
+                    'related_questions' => $item['related_questions'] ?? null,
+                ];
+            })->toArray();
+        
+
+            // Call api embed-batch
+            Http::post(config('services.python_api.base_url') . '/embed-batch', [
+                'questions' => $payload
+            ]);
+
+            // Update flag trong DB: is_embed = true
+            Question::whereIn('id', array_column($payload, 'id'))->update(['is_embed' => true]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Embedding batch thành công'
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Lỗi khi thêm nhiều câu hỏi',
+                'error' => $e->getMessage(),
+                'status' => 'error'
+            ], 500);
+        }
+    }
 
     public function add_excel(Request $request): JsonResponse
     {
@@ -288,39 +341,23 @@ class QuestionController extends Controller
 
         $request->validate([
             'question' => 'required|string|min:10',
-            'answer' => 'nullable|string',
-            'has_answer' => 'required|boolean'
         ]);
 
         try {
-            $check_data = Http::post(config('services.python_api.base_url') .'/check-duplicate', [
-                'question' => $request->question,
-            ]);
-
-            if ($check_data->json('is_duplicate') === true) {
-                return response()->json([
-                    'message' => 'Câu hỏi đã tồn tại',
-                    'question' => $check_data->json('existing_doc'),
-                    'score' => $check_data->json('score_str'),
-                    'status' => 'error'
-                ], 409);
-            }
-
             // Create question
-            $question = Question::create($request->all());
-
-            // Embedding data
-            $embed_data = Http::post(config('services.python_api.base_url') .'/embed', [
-                'id' => $question->id,
-                'question' => $question->question,
-                'answer' => $question->answer,
-                'has_answer' => (bool)$question->answer,
+            $question = Question::create([
+                'question' => $request->question,
+                'answer' =>  null,
+                'has_answer' => false,
+                'topic' => 'Câu hỏi phát sinh',
+                'related_questions' => null,
+                'ask_count' => 1,
+                'is_embed' => false,
             ]);
 
             return response()->json([
                 'status' => 'success',
-                'data' => $question,
-                'embed_data' => $embed_data->json()
+                'id' => $question->id,
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
@@ -329,5 +366,47 @@ class QuestionController extends Controller
                 'status' => 'error'
             ], 500);
         }
+    }
+
+    public function increseAskCount(Request $request): JsonResponse
+    {
+        // Kiểm tra khóa bảo mật
+        if ($request->header('x-api-secret') !== env('PUBLIC_QUESTION_SECRET')) {
+            return response()->json(['message' => 'Không có quyền truy cập'], 403);
+        }
+
+        $request->validate([
+            'id' => 'required|integer'
+        ]);
+
+        try {
+            $question = Question::findOrFail($request->id);
+            $question->ask_count +=1;
+            $question->save();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $question
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'message' => 'Lỗi khi tăng số lần hỏi',
+                'error' => $th->getMessage(),
+                'status' => 'error'
+            ], 500);
+        }
+    }
+
+    public function showTopAsk(): JsonResponse
+    {
+        $topQuestions = Question::query()
+            ->orderBy('ask_count', 'desc')
+            ->take(5)
+            ->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $topQuestions
+        ], 200);
     }
 }
