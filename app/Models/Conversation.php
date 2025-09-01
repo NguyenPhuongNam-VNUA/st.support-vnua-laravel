@@ -4,15 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class Question extends Model
+class Conversation extends Model
 {
     protected $fillable = [
         'question',
         'answer',
-        'has_answer',
-        'topic',
-        'related_questions',
-        'is_embed',
-        'ask_count',
+        'context',
+        'response_type',
     ];
 }
