@@ -217,7 +217,7 @@ class QuestionController extends Controller
         
 
             // Call api embed-batch
-            Http::post(config('services.python_api.base_url') . '/embed-batch', [
+            Http::timeout(600)->post(config('services.python_api.base_url') . '/embed-batch', [
                 'questions' => $payload
             ]);
 
