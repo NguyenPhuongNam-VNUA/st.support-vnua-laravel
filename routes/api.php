@@ -34,7 +34,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/update-status', [DocumentController::class, 'update_status']);
     });
 
-    Route::get('/conversations', action: [ConversationController::class, 'index']);
+    Route::get('/conversations', [ConversationController::class, 'index']);
 });
 
 Route::post('/public/questions', [QuestionController::class, 'storePublic']);
